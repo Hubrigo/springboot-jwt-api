@@ -4,11 +4,17 @@ import com.hugo.springbootjwtapi.auth.dto.AuthResponse;
 import com.hugo.springbootjwtapi.auth.dto.LoginRequest;
 import com.hugo.springbootjwtapi.auth.dto.RegisterRequest;
 import com.hugo.springbootjwtapi.security.Role;
+import com.hugo.springbootjwtapi.security.jwt.JwtService;
 import com.hugo.springbootjwtapi.user.User;
 import com.hugo.springbootjwtapi.user.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -16,39 +22,49 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final AuthenticationManager authenticationManager;
+    private final JwtService jwtService;
 
     public AuthResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.getEmail().trim().toLowerCase())
-                .orElseThrow(() -> new RuntimeException("Invalid credentials"));
+        String email = request.getEmail() == null ? "" : request.getEmail().trim().toLowerCase();
+        String password = request.getPassword() == null ? "" : request.getPassword();
 
-        boolean ok = passwordEncoder.matches(request.getPassword(), user.getPassword());
-        if (!ok) throw new RuntimeException("Invalid credentials");
+        Authentication auth = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(email, password)
+        );
 
-        return new AuthResponse("Login OK");
+        User user = (User) auth.getPrincipal();
+
+        String token = jwtService.generateToken(user);
+
+        return new AuthResponse(token, "Bearer", jwtService.getExpirationMs());
     }
 
     public AuthResponse register(RegisterRequest request) {
 
         if (request.getEmail() == null || request.getEmail().isBlank()) {
-            return new AuthResponse("Email is required");
+            throw new RuntimeException("Email is required");
         }
         if (request.getPassword() == null || request.getPassword().isBlank()) {
-            return new AuthResponse("Password is required");
-        }
-        //Validar que no exista el email
-        if (userRepository.existsByEmail(request.getEmail())) {
-            return new AuthResponse("Email already exists");
+            throw new RuntimeException("Password is required");
         }
 
+        String email = request.getEmail().trim().toLowerCase();
+
+        if (userRepository.existsByEmail(email)) {
+            throw new RuntimeException("Email already exists");
+        }
 
         User user = new User();
-        user.setEmail(request.getEmail().trim().toLowerCase());
+        user.setEmail(email);
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.getRoles().add(Role.USER);
 
         userRepository.save(user);
 
-        return new AuthResponse("User registered successfully");
+        String token = jwtService.generateToken(user);
+        return new AuthResponse(token, "Bearer", jwtService.getExpirationMs());
+
     }
 
 }
