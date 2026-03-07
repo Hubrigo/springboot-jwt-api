@@ -10,11 +10,10 @@ import com.hugo.springbootjwtapi.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
-import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -29,13 +28,20 @@ public class AuthService {
         String email = request.getEmail() == null ? "" : request.getEmail().trim().toLowerCase();
         String password = request.getPassword() == null ? "" : request.getPassword();
 
-        Authentication auth = authenticationManager.authenticate(
+        if (email == null || email.isBlank() || password == null || password.isBlank()) {
+            throw new RuntimeException("Email and password are required");
+        }
+
+        // 1) validacion de credenciales
+        var auth = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(email, password)
         );
 
-        User user = (User) auth.getPrincipal();
+        // 2) Si llega aquí, está autenticado
+        UserDetails userDetails = (UserDetails) auth.getPrincipal();
 
-        String token = jwtService.generateToken(user);
+        // 3) Generar JWT
+        String token = jwtService.generateToken(userDetails);
 
         return new AuthResponse(token, "Bearer", jwtService.getExpirationMs());
     }
